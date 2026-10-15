@@ -3,5 +3,6 @@
 منصة سير عمل: مشرف ← مدير تشغيل ← مالك (توظيف وتعاقدات).
 
 - الواجهة: ملف واحد `index.html`.
-- التخزين الحالي يعتمد على بيئة Claude Artifacts (`claude.use('db')`)، ولا يعمل خارجها.
-- للنشر المستقل: استبدال طبقة البيانات بـ Backend (Supabase / Firebase) ثم النشر على GitHub Pages أو Vercel.
+- التخزين: Supabase (Postgres + Realtime).
+- النشر: GitHub ← Vercel (نشر تلقائي عند كل push).
+- المتغيرات المطلوبة في Vercel: `SUPABASE_URL` و `SUPABASE_ANON_KEY`.
