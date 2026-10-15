@@ -67,6 +67,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:10px 6px;
 </head>
 <body>
 <div id="app"></div><div id="ts"></div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const ACC=[{k:'saeed',n:'سعيد علي',r:'owner',t:'المالك'},{k:'ibrahim',n:'إبراهيم غانم',r:'ops',t:'مدير التشغيل'},{k:'ahmed',n:'أحمد الزروق',r:'sup',t:'مشرف'},{k:'fateh',n:'الفاتح',r:'sup',t:'مشرف'}];
 const FLOW={hire:['استقطاب','فرز','مقابلة','عرض وظيفي','مباشرة'],con:['تواصل','عرض','تفاوض','توقيع','تنفيذ','تجديد']},KIND={hire:'توظيف',con:'تعاقد'};
@@ -154,9 +156,76 @@ function note(c){const d=c.doc.data(),l=d.log[d.log.length-1];if(!S.me||c.type==
  if(r==='ops'&&d.status==='ops')toast('🔔 '+nm(l.u)+': '+d.title+' — '+l.x);
  else if(r==='owner'&&d.status==='owner')toast('🔔 بانتظار قرارك: '+d.title);
  else if(r==='sup'&&d.owner===S.me&&['returned','approved','rejected','owner'].includes(d.status))toast('🔔 '+d.title+': '+l.x)}
+const SUPA_URL = window.ENV && window.ENV.SUPABASE_URL;
+const SUPA_KEY = window.ENV && window.ENV.SUPABASE_ANON_KEY;
+
+function makeDb(sb){
+  return {
+    collection(name){
+      return {
+        doc(id){
+          return {
+            async set(d){
+              const {error} = await sb.from(name).upsert({id, data:d, updated_at:new Date().toISOString()});
+              if(error) throw error;
+            },
+            async update(p){
+              const {data:row, error:e1} = await sb.from(name).select('data').eq('id', id).single();
+              if(e1) throw e1;
+              const {error} = await sb.from(name)
+                .update({data:{...row.data, ...p}, updated_at:new Date().toISOString()})
+                .eq('id', id);
+              if(error) throw error;
+            },
+            async delete(){
+              const {error} = await sb.from(name).delete().eq('id', id);
+              if(error) throw error;
+            }
+          };
+        },
+        onSnapshot(cb, errCb){
+          const m = new Map();
+          const mk = (id,d)=>({id, data:()=>d, metadata:{hasPendingWrites:false}});
+          const emit = (changes)=>cb({
+            docs:[...m].map(([id,d])=>mk(id,d)),
+            docChanges:()=>changes.map(c=>({type:c.type, doc:mk(c.id,c.d)}))
+          });
+          const load = async()=>{
+            const {data, error} = await sb.from(name).select('id,data');
+            if(error){ errCb && errCb(error); return; }
+            m.clear();
+            data.forEach(r=>m.set(r.id, r.data));
+            emit([]);
+          };
+          sb.channel('rt-'+name)
+            .on('postgres_changes', {event:'*', schema:'public', table:name}, p=>{
+              if(p.eventType==='DELETE'){
+                const id = p.old.id, d = m.get(id);
+                m.delete(id);
+                emit([{type:'removed', id, d}]);
+              }else{
+                const id = p.new.id, d = p.new.data;
+                const type = m.has(id) ? 'modified' : 'added';
+                m.set(id, d);
+                emit([{type, id, d}]);
+              }
+            })
+            .subscribe(s=>{
+              if(s==='SUBSCRIBED') load();
+              if(s==='CHANNEL_ERROR' && errCb) errCb(new Error('realtime'));
+            });
+        }
+      };
+    }
+  };
+}
+
 async function init(){render();
- try{db=await claude.use('db')}catch(e){}
- if(!db){toast('سجّل الدخول من حسابك لتفعيل الاتصال');return}
+ try{
+  if(!SUPA_URL||!SUPA_KEY) throw new Error('missing env');
+  db = makeDb(supabase.createClient(SUPA_URL, SUPA_KEY));
+ }catch(e){ console.error(e); }
+ if(!db){toast('تعذر الاتصال بقاعدة البيانات');return}
  db.collection('accounts').onSnapshot(s=>{S.acc={};s.docs.forEach(d=>S.acc[d.id]=d.data());render()});
  db.collection('cases').onSnapshot(s=>{if(!S.first)s.docChanges().forEach(note);S.cases=s.docs.map(d=>Object.assign({id:d.id},d.data()));S.first=false;render()},e=>toast('انقطع الاتصال'));
  setInterval(render,6e4)}
