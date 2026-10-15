@@ -1,0 +1,7 @@
+{
+  "name": "bawariq-ops",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  }
+}
